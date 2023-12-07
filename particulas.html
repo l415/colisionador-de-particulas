@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Simulador de Vuelo</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+</head>
+<body>
+  <div>
+    <label for="quantity">Cantidad de Objetos:</label>
+    <input type="range" id="quantity" min="100" max="1000" value="400">
+    <span id="quantityLabel">400</span>
+  </div>
+  <div>
+    <label for="speed">Velocidad:</label>
+    <input type="range" id="speed" min="0.1" max="16" step="0.1" value="0.2">
+    <span id="speedLabel">0.2</span>
+  </div>
+  <div>
+    <label for="sphereSize">Tamaño de las Esferas:</label>
+    <input type="range" id="sphereSize" min="0.1" max="5" step="0.1" value="2">
+    <span id="sphereSizeLabel">2</span>
+  </div>
+  <div>
+    <button id="startButton">Iniciar</button>
+    <button id="stopButton">Detener</button>
+    <button id="resetButton">Resetear</button>
+  </div>
+  <div>
+    <p>Colisiones totales: <span id="totalCollisions">0</span> (total de colisiones en la simulación)</p>
+    <p>Colisiones por segundo: <span id="collisionRate">0</span> (promedio de colisiones por segundo)</p>
+    <p>Partículas colisionadas en la esfera: <span id="particlesInSphere">0</span> (número de partículas que entraron en la esfera)</p>
+    <p>Porcentaje de partículas colisionadas: <span id="collisionPercentage">0.00%</span> (porcentaje de partículas que colisionaron)</p>
+    <p>: <span id="particleCollisions">0</span> ()</p>
+  </div>
+  <script>
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+    const renderer = new THREE.WebGLRenderer();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    document.body.appendChild(renderer.domElement);
+
+    const spaceSize = 20;
+    let numPlanes = 400;
+    let speedFactor = 0.2;
+    let sphereRadius = 2;
+    const collisionHistory = [];
+    let totalCollisions = 0;
+    let collisionCount = 0;
+    let particlesInSphereCount = 0;
+    let particleCollisionsCount = 0;
+    let animationId;
+
+    const sphereGeometry = new THREE.SphereGeometry(sphereRadius, 32, 32);
+    const sphereMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.3 });
+    const sphere = new THREE.Mesh(sphereGeometry, sphereMaterial);
+    scene.add(sphere);
+
+    const planes = [];
+
+    const quantityInput = document.getElementById('quantity');
+    const quantityLabel = document.getElementById('quantityLabel');
+    const speedInput = document.getElementById('speed');
+    const speedLabel = document.getElementById('speedLabel');
+    const sphereSizeInput = document.getElementById('sphereSize');
+    const sphereSizeLabel = document.getElementById('sphereSizeLabel');
+    const totalCollisionsElement = document.getElementById('totalCollisions');
+    const collisionRateElement = document.getElementById('collisionRate');
+    const particlesInSphereElement = document.getElementById('particlesInSphere');
+    const collisionPercentageElement = document.getElementById('collisionPercentage');
+    const particleCollisionsElement = document.getElementById('particleCollisions');
+    const startButton = document.getElementById('startButton');
+    const stopButton = document.getElementById('stopButton');
+    const resetButton = document.getElementById('resetButton');
+
+    quantityInput.addEventListener('input', () => {
+      numPlanes = parseInt(quantityInput.value);
+      quantityLabel.textContent = numPlanes;
+    });
+
+    speedInput.addEventListener('input', () => {
+      speedFactor = parseFloat(speedInput.value);
+      speedLabel.textContent = speedFactor.toFixed(2);
+    });
+
+    sphereSizeInput.addEventListener('input', () => {
+      sphereRadius = parseFloat(sphereSizeInput.value);
+      sphereSizeLabel.textContent = sphereRadius.toFixed(1);
+    });
+
+    startButton.addEventListener('click', () => {
+      resetSimulation();
+      animate();
+    });
+
+    stopButton.addEventListener('click', () => {
+      cancelAnimationFrame(animationId);
+    });
+
+    resetButton.addEventListener('click', () => {
+      cancelAnimationFrame(animationId);
+      resetSimulation();
+    });
+
+    const animate = () => {
+      animationId = requestAnimationFrame(animate);
+
+      planes.forEach(plane => {
+        plane.position.add(plane.velocity);
+
+        if (plane.position.x < -spaceSize / 2 || plane.position.x > spaceSize / 2) {
+          plane.velocity.x *= -1;
+        }
+
+        if (plane.position.y < -spaceSize / 2 || plane.position.y > spaceSize / 2) {
+          plane.velocity.y *= -1;
+        }
+
+        if (plane.position.z < -spaceSize / 2 || plane.position.z > spaceSize / 2) {
+          plane.velocity.z *= -1;
+        }
+
+        const distanceToCenter = plane.position.distanceTo(new THREE.Vector3(0, 0, 0));
+        if (distanceToCenter < sphereRadius) {
+          handleParticleInSphere(plane);
+        } else {
+          plane.material.color.set(0x00ff00); // Verde
+        }
+      });
+
+      checkCollisions();
+
+      renderer.render(scene, camera);
+    };
+
+    const checkCollisions = () => {
+      for (let i = 0; i < planes.length; i++) {
+        for (let j = i + 1; j < planes.length; j++) {
+          const distance = planes[i].position.distanceTo(planes[j].position);
+          if (distance < 0.3) {
+            planes[i].material.color.set(0xff0000); // Rojo
+            planes[j].material.color.set(0xff0000);
+            if (!collisionHistory.includes(i) && !collisionHistory.includes(j)) {
+              totalCollisions++;
+              collisionCount++;
+              collisionHistory.push(i, j);
+            }
+          } else {
+            planes[i].material.color.set(0x00ff00); // Verde
+            planes[j].material.color.set(0x00ff00);
+          }
+        }
+      }
+
+      if (collisionCount > 0) {
+        const collisionRate = collisionCount / 60; // Asumiendo 60 fotogramas por segundo
+        collisionRateElement.textContent = collisionRate.toFixed(2);
+        collisionCount = 0;
+        collisionHistory.length = 0;
+      }
+
+      const collisionPercentage = (totalCollisions / ((numPlanes * (numPlanes - 1)) / 2)) * 100;
+      collisionPercentageElement.textContent = collisionPercentage.toFixed(2) + '%';
+
+      totalCollisionsElement.textContent = totalCollisions;
+    };
+
+    const handleParticleInSphere = (plane) => {
+      plane.inSphere = true;
+      plane.material.color.set(0x0000ff); // Azul
+      particlesInSphereCount++;
+      particlesInSphereElement.textContent = particlesInSphereCount;
+      removePlane(plane);
+    };
+
+    const removePlane = (plane) => {
+      const index = planes.indexOf(plane);
+      if (index !== -1) {
+        scene.remove(plane);
+        planes.splice(index, 1);
+      }
+    };
+
+    const resetSimulation = () => {
+      cancelAnimationFrame(animationId);
+
+      totalCollisions = 0;
+      collisionCount = 0;
+      particlesInSphereCount = 0;
+      particleCollisionsCount = 0;
+
+      totalCollisionsElement.textContent = totalCollisions;
+      collisionRateElement.textContent = '0.00';
+      particlesInSphereElement.textContent = particlesInSphereCount;
+      particleCollisionsElement.textContent = particleCollisionsCount;
+
+      planes.forEach(plane => {
+        scene.remove(plane);
+      });
+
+      planes.length = 0;
+
+      scene.remove(sphere);
+
+      for (let i = 0; i < numPlanes; i++) {
+        const plane = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.06, 0.06), new THREE.MeshBasicMaterial({ color: 0x800080 })); // Morado
+        plane.position.x = Math.random() * spaceSize - spaceSize / 2;
+        plane.position.y = Math.random() * spaceSize - spaceSize / 2;
+        plane.position.z = Math.random() * spaceSize - spaceSize / 2;
+        plane.velocity = new THREE.Vector3((Math.random() - 0.5) * speedFactor, (Math.random() - 0.5) * speedFactor, (Math.random() - 0.5) * speedFactor);
+        planes.push(plane);
+        scene.add(plane);
+      }
+
+      const newSphereGeometry = new THREE.SphereGeometry(sphereRadius, 32, 32);
+      sphere.geometry.dispose();
+      sphere.geometry = newSphereGeometry;
+      scene.add(sphere);
+    };
+
+    camera.position.z = spaceSize / 2;
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+  </script>
+</body>
+</html>
